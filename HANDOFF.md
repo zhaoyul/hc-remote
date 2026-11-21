@@ -321,3 +321,11 @@ turnserver -c deploy/coturn.conf
 - Docker 镜像建议名 `hc-remote-linux`（旧镜像 `hc-remote-jank` 含 jank 工具链，已无用，可删除）。
 - 没有遗留后台信令服务或构建任务。
 - 没有需要交接的账号、密码、证书或私有令牌。
+
+## 16. 生产部署（GPU 服务器）
+
+- 信令服务器：`ws://106.12.6.24:8090`，systemd 服务 `hc-remote-signal`（`/etc/systemd/system/hc-remote-signal.service`，token 在 unit 文件中，Restart=always + 开机自启），二进制在 `/opt/hc-remote/`。
+- STUN：`stun:106.12.6.24:3478`（coturn，stun-only，`/etc/turnserver.conf`）。
+- 构建方式：服务器原生静态构建（g++-10 + CMake pip 版 + `-DHCR_LINK_STATIC=ON`），产物仅依赖 glibc；vendored nlohmann 源码配合 `FETCHCONTENT_SOURCE_DIR_*`。
+- 端到端验证：本机经公网 token 鉴权 probe、双端互发消息均通过。
+- 待办：WSS（反向代理 + TLS）未部署；公网流量仍为明文 WS。
