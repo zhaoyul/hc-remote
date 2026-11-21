@@ -23,6 +23,8 @@ struct Options {
   std::string stun;
   std::string token;
   std::string message = "hello";
+  std::string sendFile;
+  std::string downloadDir = ".";
   int timeoutSeconds = 60;
   int quitAfter = 0;
   bool binaryDemo = false;
@@ -47,10 +49,13 @@ Options parseOptions(int argc, char **argv) {
     else if (arg == "--timeout") options.timeoutSeconds = std::stoi(next());
     else if (arg == "--quit-after") options.quitAfter = std::stoi(next());
     else if (arg == "--binary-demo") options.binaryDemo = true;
+    else if (arg == "--send-file") options.sendFile = next();
+    else if (arg == "--download-dir") options.downloadDir = next();
     else if (arg == "--help") {
       std::cout << "Usage: hc-remote-peer --peer ID [--server ws://127.0.0.1:8080] "
                    "[--room demo] [--stun stun:host:3478] [--message text] "
-                   "[--binary-demo] [--quit-after N] [--timeout seconds]\n";
+                   "[--binary-demo] [--send-file path] [--download-dir dir] "
+                   "[--quit-after N] [--timeout seconds]\n";
       std::exit(0);
     } else {
       throw std::invalid_argument("unknown argument: " + arg);
@@ -77,7 +82,10 @@ int main(int argc, char **argv) {
     std::signal(SIGTERM, onSignal);
 
     hcr::Session session({options.server, options.room, options.peer, options.token, options.stun});
+    session.setDownloadDir(options.downloadDir);
     bool fatal = false;
+    bool fileFinished = false;
+    bool fileSendStarted = false;
     int received = 0;
 
     session.connect();
@@ -109,6 +117,14 @@ int main(int argc, char **argv) {
           const std::vector<std::byte> payload{std::byte{0}, std::byte{1}, std::byte{2}, std::byte{255}};
           session.sendBinary("game", payload);
         }
+        if (!options.sendFile.empty() && !fileSendStarted && event.channel == "control") {
+          fileSendStarted = true;
+          if (!session.sendFile(options.sendFile)) {
+            std::cerr << "failed to send file: " << options.sendFile << '\n';
+            fatal = true;
+            stopping = true;
+          }
+        }
         break;
       case hcr::EventType::ChannelClosed:
         std::cout << "channel closed: " << event.channel << '\n';
@@ -127,6 +143,30 @@ int main(int argc, char **argv) {
         fatal = true;
         stopping = true;
         break;
+      case hcr::EventType::FileOffer:
+        std::cout << "file offer: id=" << event.frameId << " name=" << event.text
+                  << " size=" << event.fileSize << '\n';
+        break;
+      case hcr::EventType::FileProgress:
+        std::cout << "file progress: id=" << event.frameId
+                  << " bytes=" << event.fileSize << '\n';
+        break;
+      case hcr::EventType::FileComplete: {
+        const char *what = event.channel == "sent" ? "sent"
+                           : event.channel == "acked" ? "acked"
+                                                      : "saved";
+        std::cout << "file complete: id=" << event.frameId << " " << what
+                  << " " << event.text << " size=" << event.fileSize << '\n';
+        if (event.channel != "sent") {
+          fileFinished = true;
+        }
+        break;
+      }
+      case hcr::EventType::FileError:
+        std::cerr << "file error: " << event.code << " " << event.text << '\n';
+        fatal = true;
+        fileFinished = true;
+        break;
       default:
         break;
       }
@@ -143,6 +183,9 @@ int main(int argc, char **argv) {
         progressed = true;
       }
       if (options.quitAfter > 0 && received >= options.quitAfter) {
+        break;
+      }
+      if (fileFinished && options.quitAfter == 0) {
         break;
       }
       if (!progressed) {

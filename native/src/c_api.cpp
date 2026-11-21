@@ -31,6 +31,7 @@ hcr_event toCEvent(const hcr::Event &event) {
   out.frame_id = event.frameId;
   out.timestamp_ms = event.timestampMs;
   out.keyframe = event.keyframe;
+  out.file_size = event.fileSize;
   return out;
 }
 
@@ -128,6 +129,29 @@ bool hcr_session_send_frame(hcr_session *session, uint32_t frame_id,
   } catch (const std::exception &error) {
     setError(error);
     return false;
+  }
+}
+
+bool hcr_session_send_file(hcr_session *session, const char *path,
+                           const char *name) {
+  if (!session || !path) {
+    return false;
+  }
+  try {
+    return session->session.sendFile(path, name ? name : "");
+  } catch (const std::exception &error) {
+    setError(error);
+    return false;
+  }
+}
+
+void hcr_session_set_download_dir(hcr_session *session, const char *path) {
+  if (session && path) {
+    try {
+      session->session.setDownloadDir(path);
+    } catch (const std::exception &error) {
+      setError(error);
+    }
   }
 }
 

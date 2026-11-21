@@ -38,6 +38,7 @@ FetchContent_MakeAvailable(libdatachannel)
 add_library(hcr_native SHARED
   native/src/c_api.cpp
   native/src/event_queue.cpp
+  native/src/file_transfer.cpp
   native/src/frame_codec.cpp
   native/src/peer.cpp
   native/src/session.cpp
@@ -48,7 +49,11 @@ target_link_libraries(hcr_native PUBLIC
   LibDataChannel::LibDataChannel
   nlohmann_json::nlohmann_json
 )
-target_compile_options(hcr_native PRIVATE -Wall -Wextra -Wpedantic)
+if(MSVC)
+  target_compile_options(hcr_native PRIVATE /W4)
+else()
+  target_compile_options(hcr_native PRIVATE -Wall -Wextra -Wpedantic)
+endif()
 
 add_executable(hc-remote-signal native/src/signal_server.cpp)
 target_link_libraries(hc-remote-signal PRIVATE

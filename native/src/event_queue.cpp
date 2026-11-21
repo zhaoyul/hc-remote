@@ -33,6 +33,10 @@ const char *eventName(EventType type) {
   case EventType::Error: return "error";
   case EventType::QueueOverflow: return "queue-overflow";
   case EventType::FrameMessage: return "frame-message";
+  case EventType::FileOffer: return "file-offer";
+  case EventType::FileProgress: return "file-progress";
+  case EventType::FileComplete: return "file-complete";
+  case EventType::FileError: return "file-error";
   }
   return "unknown";
 }

@@ -28,10 +28,10 @@ for arch in x86_64 arm64; do
   make clean
 done
 
-mkdir -p ../openssl-universal/include ../openssl-universal/lib
-cp -R out-x86_64/include/openssl ../openssl-universal/include/
+mkdir -p "$repo_root/build-openssl-universal/include" "$repo_root/build-openssl-universal/lib"
+cp -R out-x86_64/include/openssl "$repo_root/build-openssl-universal/include/"
 for lib in libcrypto.a libssl.a; do
   lipo -create out-x86_64/lib/$lib out-arm64/lib/$lib \
-    -output ../openssl-universal/lib/$lib
+    -output "$repo_root/build-openssl-universal/lib/$lib"
 done
-lipo -info ../openssl-universal/lib/libssl.a ../openssl-universal/lib/libcrypto.a
+lipo -info "$repo_root/build-openssl-universal/lib/libssl.a" "$repo_root/build-openssl-universal/lib/libcrypto.a"

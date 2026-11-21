@@ -29,6 +29,10 @@ typedef enum {
   HCR_EVENT_ERROR = 15,
   HCR_EVENT_QUEUE_OVERFLOW = 16,
   HCR_EVENT_FRAME_MESSAGE = 17,
+  HCR_EVENT_FILE_OFFER = 18,
+  HCR_EVENT_FILE_PROGRESS = 19,
+  HCR_EVENT_FILE_COMPLETE = 20,
+  HCR_EVENT_FILE_ERROR = 21,
 } hcr_event_type;
 
 typedef struct {
@@ -49,6 +53,7 @@ typedef struct {
   uint32_t frame_id;
   uint32_t timestamp_ms;
   bool keyframe;
+  uint64_t file_size;
 } hcr_event;
 
 const char *hcr_event_type_name(hcr_event_type type);
@@ -87,6 +92,13 @@ bool hcr_session_send_binary(hcr_session *session, const char *channel,
 bool hcr_session_send_frame(hcr_session *session, uint32_t frame_id,
                              bool keyframe, uint32_t timestamp_ms,
                              const uint8_t *data, size_t size);
+/*
+ * File transfer over the reliable control channel. The file is streamed in
+ * the native layer; progress/completion arrive as FILE_* events.
+ */
+bool hcr_session_send_file(hcr_session *session, const char *path,
+                           const char *name);
+void hcr_session_set_download_dir(hcr_session *session, const char *path);
 bool hcr_session_poll_event(hcr_session *session, hcr_event *out);
 void hcr_session_close(hcr_session *session);
 void hcr_session_destroy(hcr_session *session);

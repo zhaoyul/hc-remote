@@ -27,6 +27,10 @@ enum class EventType {
   Error,
   QueueOverflow,
   FrameMessage,
+  FileOffer,
+  FileProgress,
+  FileComplete,
+  FileError,
 };
 
 struct Event {
@@ -46,6 +50,7 @@ struct Event {
   std::uint32_t frameId = 0;
   std::uint32_t timestampMs = 0;
   bool keyframe = false;
+  std::uint64_t fileSize = 0;
 };
 
 class Peer {
@@ -130,6 +135,12 @@ public:
                  const std::vector<std::byte> &payload);
   Event pollEvent();
   void close();
+
+  // File transfer over the reliable control channel. sendFile streams the
+  // file in native layer (bounded memory); progress arrives as FileProgress
+  // events. Incoming files are written under the download dir (default ".").
+  bool sendFile(const std::string &path, const std::string &name = "");
+  void setDownloadDir(const std::string &dir);
 
 private:
   struct Impl;
