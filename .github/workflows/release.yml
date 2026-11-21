@@ -60,10 +60,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install dependencies (vcpkg)
-        run: vcpkg install openssl:x64-windows nlohmann-json:x64-windows
+        run: vcpkg install openssl:x64-windows-static-md nlohmann-json:x64-windows-static-md
       - name: Build
         run: |
-          cmake -S . -B build -A x64 "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
+          cmake -S . -B build -A x64 "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows-static-md
           cmake --build build --config Release -j4
       - name: Package
         shell: pwsh

@@ -12,7 +12,14 @@ set(NO_MEDIA ON CACHE BOOL "" FORCE)
 set(NO_EXAMPLES ON CACHE BOOL "" FORCE)
 set(NO_TESTS ON CACHE BOOL "" FORCE)
 set(NO_WEBSOCKET OFF CACHE BOOL "" FORCE)
-set(BUILD_SHARED_LIBS ON CACHE BOOL "" FORCE)
+if(WIN32)
+  # DLL builds of libdatachannel export std::vector<std::byte> template
+  # instantiations which collide with consumer objects (LNK2005); link the
+  # whole stack statically on Windows.
+  set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+else()
+  set(BUILD_SHARED_LIBS ON CACHE BOOL "" FORCE)
+endif()
 
 FetchContent_Declare(
   libdatachannel
@@ -35,7 +42,7 @@ if(NOT nlohmann_json_FOUND)
 endif()
 FetchContent_MakeAvailable(libdatachannel)
 
-add_library(hcr_native SHARED
+set(HCR_NATIVE_SOURCES
   native/src/c_api.cpp
   native/src/event_queue.cpp
   native/src/file_transfer.cpp
@@ -44,6 +51,11 @@ add_library(hcr_native SHARED
   native/src/session.cpp
   native/src/signaling.cpp
 )
+if(WIN32)
+  add_library(hcr_native STATIC ${HCR_NATIVE_SOURCES})
+else()
+  add_library(hcr_native SHARED ${HCR_NATIVE_SOURCES})
+endif()
 target_include_directories(hcr_native PUBLIC native/include)
 target_link_libraries(hcr_native PUBLIC
   LibDataChannel::LibDataChannel
