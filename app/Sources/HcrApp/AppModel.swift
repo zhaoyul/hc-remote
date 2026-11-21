@@ -428,8 +428,12 @@ final class AppModel: ObservableObject {
       isStreaming = false
       isViewing = false
       if deviceHost {
-        deviceMode = false
-        deviceHost = false
+        // Device mode stays available: rejoin the room so the next
+        // controller can connect at any time.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+          guard let self, self.deviceHost, !self.isActive else { return }
+          self.connect(to: self.deviceRoom, viewOnly: false)
+        }
       }
     } else {
       probe.probeOnce()
