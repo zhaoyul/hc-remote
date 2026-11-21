@@ -1,0 +1,106 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  linux:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            arch: x86_64
+          - os: ubuntu-24.04-arm
+            arch: arm64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ninja-build cmake libssl-dev nlohmann-json3-dev
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+      - name: Build
+        run: cmake --build build -j4
+      - name: Smoke test (two peers, text + binary)
+        run: |
+          set -e
+          ./build/hc-remote-signal --port 18082 &
+          server=$!
+          trap 'kill $server 2>/dev/null || true' EXIT
+          sleep 1
+          ./build/hc-remote-peer --server ws://127.0.0.1:18082 --room smoke --peer a \
+            --message hello-a --binary-demo --quit-after 3 --timeout 30 &
+          a=$!
+          sleep 0.5
+          ./build/hc-remote-peer --server ws://127.0.0.1:18082 --room smoke --peer b \
+            --message hello-b --binary-demo --quit-after 3 --timeout 30 &
+          b=$!
+          wait $a
+          wait $b
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies (vcpkg)
+        run: vcpkg install openssl:x64-windows nlohmann-json:x64-windows
+      - name: Configure
+        run: cmake -S . -B build -A x64 "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
+      - name: Build
+        run: cmake --build build --config Release -j4
+
+  macos:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: brew install ninja
+      - name: Cache universal OpenSSL
+        id: openssl-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            build-openssl-universal
+            build/openssl-src
+          key: openssl-3.6.3-universal-${{ runner.arch }}
+      - name: Build universal static OpenSSL
+        if: steps.openssl-cache.outputs.cache-hit != 'true'
+        run: ./deploy/build-openssl-universal.sh
+      - name: Configure (universal)
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" \
+            -DOPENSSL_ROOT_DIR="$PWD/build-openssl-universal" \
+            -DOPENSSL_USE_STATIC_LIBS=ON
+      - name: Build
+        run: cmake --build build -j4
+      - name: Smoke test (two peers, text + binary)
+        run: |
+          set -e
+          ./build/hc-remote-signal --port 18082 &
+          server=$!
+          trap 'kill $server 2>/dev/null || true' EXIT
+          sleep 1
+          ./build/hc-remote-peer --server ws://127.0.0.1:18082 --room smoke --peer a \
+            --message hello-a --binary-demo --quit-after 3 --timeout 30 &
+          a=$!
+          sleep 0.5
+          ./build/hc-remote-peer --server ws://127.0.0.1:18082 --room smoke --peer b \
+            --message hello-b --binary-demo --quit-after 3 --timeout 30 &
+          b=$!
+          wait $a
+          wait $b
+      - name: Build macOS client (universal)
+        run: |
+          export HCR_NATIVE_BUILD="$PWD/build"
+          ./app/make-app.sh
+      - name: Verify bundle architectures
+        run: |
+          lipo -info build/hc-remote.app/Contents/MacOS/hc-remote
+          lipo -info build/hc-remote.app/Contents/Frameworks/libhcr_native.dylib
+          lipo -info build/hc-remote.app/Contents/Frameworks/libdatachannel.0.dylib

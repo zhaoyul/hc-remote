@@ -1,0 +1,4 @@
+module CHcr {
+  header "../../../native/include/hcr/hcr_c.h"
+  export *
+}

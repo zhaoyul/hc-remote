@@ -1,0 +1,60 @@
+cmake_minimum_required(VERSION 3.24)
+project(hc_remote VERSION 0.1.0 LANGUAGES CXX)
+
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+
+include(FetchContent)
+
+set(NO_MEDIA ON CACHE BOOL "" FORCE)
+set(NO_EXAMPLES ON CACHE BOOL "" FORCE)
+set(NO_TESTS ON CACHE BOOL "" FORCE)
+set(NO_WEBSOCKET OFF CACHE BOOL "" FORCE)
+set(BUILD_SHARED_LIBS ON CACHE BOOL "" FORCE)
+
+FetchContent_Declare(
+  libdatachannel
+  GIT_REPOSITORY https://github.com/paullouisageneau/libdatachannel.git
+  GIT_TAG v0.24.6
+  GIT_SHALLOW TRUE
+  GIT_SUBMODULES_RECURSE TRUE
+)
+
+find_package(nlohmann_json 3.11.3 QUIET)
+if(NOT nlohmann_json_FOUND)
+  message(STATUS "nlohmann_json not found on system, fetching via FetchContent")
+  FetchContent_Declare(
+    nlohmann_json
+    GIT_REPOSITORY https://github.com/nlohmann/json.git
+    GIT_TAG v3.12.0
+    GIT_SHALLOW TRUE
+  )
+  FetchContent_MakeAvailable(nlohmann_json)
+endif()
+FetchContent_MakeAvailable(libdatachannel)
+
+add_library(hcr_native SHARED
+  native/src/c_api.cpp
+  native/src/event_queue.cpp
+  native/src/frame_codec.cpp
+  native/src/peer.cpp
+  native/src/session.cpp
+  native/src/signaling.cpp
+)
+target_include_directories(hcr_native PUBLIC native/include)
+target_link_libraries(hcr_native PUBLIC
+  LibDataChannel::LibDataChannel
+  nlohmann_json::nlohmann_json
+)
+target_compile_options(hcr_native PRIVATE -Wall -Wextra -Wpedantic)
+
+add_executable(hc-remote-signal native/src/signal_server.cpp)
+target_link_libraries(hc-remote-signal PRIVATE
+  LibDataChannel::LibDataChannel
+  nlohmann_json::nlohmann_json
+)
+
+add_executable(hc-remote-peer native/src/peer_main.cpp)
+target_link_libraries(hc-remote-peer PRIVATE hcr_native)
