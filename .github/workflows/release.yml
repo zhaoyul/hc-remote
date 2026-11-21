@@ -24,7 +24,7 @@ jobs:
       - name: Install build dependencies
         run: |
           apt-get update
-          apt-get install -y --no-install-recommends g++ ninja-build git curl ca-certificates libssl-dev python3
+          apt-get install -y --no-install-recommends g++ ninja-build git curl ca-certificates libssl-dev python3 zip
       - name: Install CMake
         run: |
           curl -fsSL "https://github.com/Kitware/CMake/releases/download/v3.28.6/cmake-3.28.6-linux-$(uname -m).sh" -o /tmp/cmake.sh
