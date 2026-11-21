@@ -56,6 +56,28 @@ struct Peer::Impl {
     });
   }
 
+  ~Impl() {
+    // Unbind every callback before members are destroyed: the
+    // PeerConnection destructor fires state callbacks which would otherwise
+    // write into the already-destroyed event queue (heap-use-after-free).
+    {
+      std::lock_guard lock(mutex);
+      for (auto &[label, ch] : channels) {
+        if (ch) {
+          ch->onOpen(nullptr);
+          ch->onClosed(nullptr);
+          ch->onError(nullptr);
+          ch->onMessage(nullptr);
+        }
+      }
+    }
+    pc.onLocalDescription(nullptr);
+    pc.onLocalCandidate(nullptr);
+    pc.onStateChange(nullptr);
+    pc.onDataChannel(nullptr);
+    pc.close();
+  }
+
   void installChannel(const std::shared_ptr<rtc::DataChannel> &channel) {
     const auto label = channel->label();
     {

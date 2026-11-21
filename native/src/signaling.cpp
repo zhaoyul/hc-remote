@@ -44,6 +44,16 @@ struct SignalingClient::Impl {
     });
   }
 
+  ~Impl() {
+    // Unbind callbacks before members are destroyed: the WebSocket
+    // destructor can fire onClosed into the already-destroyed event queue.
+    ws->onOpen(nullptr);
+    ws->onClosed(nullptr);
+    ws->onError(nullptr);
+    ws->onMessage(nullptr);
+    ws->close();
+  }
+
   void receive(const std::string &text) {
     try {
       const auto message = Json::parse(text);
