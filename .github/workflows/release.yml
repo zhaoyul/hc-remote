@@ -19,15 +19,21 @@ jobs:
           - os: ubuntu-24.04-arm
             arch: arm64
     runs-on: ${{ matrix.os }}
+    container: ubuntu:20.04
     steps:
+      - name: Install build dependencies
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends g++ ninja-build git curl ca-certificates libssl-dev python3
+      - name: Install CMake
+        run: |
+          curl -fsSL "https://github.com/Kitware/CMake/releases/download/v3.28.6/cmake-3.28.6-linux-$(uname -m).sh" -o /tmp/cmake.sh
+          bash /tmp/cmake.sh --skip-license --prefix=/usr/local
       - uses: actions/checkout@v4
-      - name: Install dependencies
+      - name: Build (static, glibc 2.31+)
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends ninja-build cmake libssl-dev nlohmann-json3-dev
-      - name: Build
-        run: |
-          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DHCR_LINK_STATIC=ON -DOPENSSL_USE_STATIC_LIBS=ON
           cmake --build build -j4
       - name: Smoke test
         run: |
@@ -116,10 +122,18 @@ jobs:
           b=$!
           wait $a
           wait $b
+      - name: Build static server binaries (standalone)
+        run: |
+          cmake -S . -B build-server -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" \
+            -DOPENSSL_ROOT_DIR="$PWD/build-openssl-universal" \
+            -DOPENSSL_USE_STATIC_LIBS=ON \
+            -DHCR_LINK_STATIC=ON
+          cmake --build build-server -j4 --target hc-remote-signal hc-remote-peer
       - name: Package server (universal)
         run: |
           mkdir -p dist
-          cp build/hc-remote-signal build/hc-remote-peer LICENSE deploy/THIRD-PARTY-LICENSES.txt dist/
+          cp build-server/hc-remote-signal build-server/hc-remote-peer LICENSE deploy/THIRD-PARTY-LICENSES.txt dist/
           cd dist && zip -9 "../hc-remote-server-macos-universal.zip" ./*
       - name: Build and package client (universal)
         run: |

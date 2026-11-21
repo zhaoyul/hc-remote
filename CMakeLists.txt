@@ -8,14 +8,16 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 include(FetchContent)
 
+option(HCR_LINK_STATIC "Statically link libdatachannel/OpenSSL and the C++ runtime" OFF)
+
 set(NO_MEDIA ON CACHE BOOL "" FORCE)
 set(NO_EXAMPLES ON CACHE BOOL "" FORCE)
 set(NO_TESTS ON CACHE BOOL "" FORCE)
 set(NO_WEBSOCKET OFF CACHE BOOL "" FORCE)
-if(WIN32)
+if(WIN32 OR HCR_LINK_STATIC)
   # DLL builds of libdatachannel export std::vector<std::byte> template
-  # instantiations which collide with consumer objects (LNK2005); link the
-  # whole stack statically on Windows.
+  # instantiations which collide with consumer objects (LNK2005); static
+  # linking also makes the binaries portable across distros.
   set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 else()
   set(BUILD_SHARED_LIBS ON CACHE BOOL "" FORCE)
@@ -51,7 +53,7 @@ set(HCR_NATIVE_SOURCES
   native/src/session.cpp
   native/src/signaling.cpp
 )
-if(WIN32)
+if(WIN32 OR HCR_LINK_STATIC)
   add_library(hcr_native STATIC ${HCR_NATIVE_SOURCES})
 else()
   add_library(hcr_native SHARED ${HCR_NATIVE_SOURCES})
@@ -75,3 +77,8 @@ target_link_libraries(hc-remote-signal PRIVATE
 
 add_executable(hc-remote-peer native/src/peer_main.cpp)
 target_link_libraries(hc-remote-peer PRIVATE hcr_native)
+
+if(HCR_LINK_STATIC AND NOT APPLE AND NOT WIN32)
+  target_link_options(hc-remote-signal PRIVATE -static-libstdc++ -static-libgcc)
+  target_link_options(hc-remote-peer PRIVATE -static-libstdc++ -static-libgcc)
+endif()
