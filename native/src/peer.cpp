@@ -191,7 +191,17 @@ bool Peer::sendText(const std::string &channel, const std::string &message) {
     return false;
   }
   auto target = impl_->channel(channel);
-  return target && target->isOpen() && target->send(message);
+  if (!target || !target->isOpen()) {
+    return false;
+  }
+  try {
+    // libdatachannel returns false when the message is queued rather than
+    // handed to SCTP; queued messages are still delivered.
+    target->send(message);
+    return true;
+  } catch (const std::exception &) {
+    return false;
+  }
 }
 
 bool Peer::sendBinary(const std::string &channel, const std::vector<std::byte> &message) {
@@ -199,7 +209,15 @@ bool Peer::sendBinary(const std::string &channel, const std::vector<std::byte> &
     return false;
   }
   auto target = impl_->channel(channel);
-  return target && target->isOpen() && target->send(message);
+  if (!target || !target->isOpen()) {
+    return false;
+  }
+  try {
+    target->send(message);
+    return true;
+  } catch (const std::exception &) {
+    return false;
+  }
 }
 
 Event Peer::pollEvent() { return impl_->events.poll(); }
