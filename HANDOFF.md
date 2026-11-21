@@ -291,8 +291,8 @@ turnserver -c deploy/coturn.conf
 - 开发模式使用 WS；公网部署必须由反向代理终止 TLS 并提供 WSS。
 - 共享 token 只能用于受信演示环境。
 - 信令服务当前为单进程内存状态，不支持水平扩展。
-- 项目目录不是 Git 仓库，没有提交历史。
-- 许可证未定（早期 `project.clj` 曾声明 MPL 2.0，已随 jank 移除）；正式分发前需确认项目及所有依赖的许可证和 NOTICE 要求。
+- 项目已开源：github.com/zhaoyul/hc-remote（MPL-2.0），CI/Release 由 GitHub Actions 驱动。
+- 许可证 MPL-2.0；第三方许可见 `deploy/THIRD-PARTY-LICENSES.txt`（macOS 包静态含 OpenSSL，Apache-2.0 文本随包分发）。
 - UI 客户端仅 macOS 13+，不能直接分发。
 - 代码签名使用固定自签名证书 `build/sign/hcr-dev`（私钥不入库，重建目录即换身份）；证书必须在钥匙串中设为受信，否则 TCC 无法把运行进程映射到 `org.hcremote.mac` 授权上。ad-hoc 签名每次构建换 cdhash，TCC 授权会随之作废，是已踩过的坑。
 - 投屏需要“屏幕录制”权限，键鼠注入需要“辅助功能”权限；授权后 `tccutil` 可重置（调试时用过）。

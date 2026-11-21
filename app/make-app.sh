@@ -82,8 +82,8 @@ PLIST
 
 signing_identity="${HCR_SIGN_IDENTITY:-}"
 if [[ -z "$signing_identity" ]]; then
-  if security find-identity -p codesigning 2>/dev/null | grep -q '"hcr-dev"'; then
-    signing_identity="hcr-dev"
+  if security find-identity -p codesigning 2>/dev/null | grep -q '"hcr-dev"\|"hcuu-dev"'; then
+    signing_identity="$(security find-identity -p codesigning 2>/dev/null | grep -oE '"(hcr|hcuu)-dev"' | head -1 | tr -d '"')"
   else
     signing_identity="-"
   fi
