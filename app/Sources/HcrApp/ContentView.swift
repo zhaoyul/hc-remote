@@ -1,3 +1,4 @@
+import AppKit
 import HcrCore
 import HcrMedia
 import SwiftUI
@@ -18,21 +19,91 @@ struct ContentView: View {
   @State private var showDrawer = true
 
   var body: some View {
-    HStack(spacing: 0) {
-      sidebar
-      VStack(spacing: 0) {
-        topBar
-        if let device = model.selectedDevice {
-          devicePage(device)
-        } else {
-          assistPage
+    Group {
+      if model.immersive {
+        immersiveView
+      } else {
+        HStack(spacing: 0) {
+          sidebar
+          VStack(spacing: 0) {
+            topBar
+            if let device = model.selectedDevice {
+              devicePage(device)
+            } else {
+              assistPage
+            }
+          }
+          .frame(maxWidth: .infinity, maxHeight: .infinity)
+          .background(Brand.canvas)
         }
       }
-      .frame(maxWidth: .infinity, maxHeight: .infinity)
-      .background(Brand.canvas)
     }
     .frame(minWidth: 1020, minHeight: 640)
     .onAppear { model.startIfConfigured() }
+    .onReceive(
+      NotificationCenter.default.publisher(for: NSWindow.didExitFullScreenNotification)
+    ) { _ in
+      if model.immersive {
+        model.immersive = false
+      }
+    }
+  }
+
+  private var immersiveView: some View {
+    ZStack(alignment: .top) {
+      ScreenView(box: model.screenBox) { message in
+        model.sendInput(message)
+      }
+      .background(Color.black)
+      immersiveToolbar
+        .padding(.top, 10)
+    }
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .background(Color.black)
+  }
+
+  private var immersiveToolbar: some View {
+    HStack(spacing: 10) {
+      Button {
+        model.toggleImmersive()
+      } label: {
+        Label("退出全屏", systemImage: "arrow.down.right.and.arrow.up.left")
+      }
+      .keyboardShortcut(.cancelAction)
+
+      Button {
+        model.toggleStreaming()
+      } label: {
+        Label(
+          model.isStreaming ? "停止投屏" : "开始投屏",
+          systemImage: model.isStreaming ? "stop.circle" : "play.circle")
+      }
+
+      Toggle("控制", isOn: $model.allowRemoteControl)
+        .toggleStyle(.switch)
+        .onChange(of: model.allowRemoteControl) { value in
+          model.stream.allowRemoteControl = value
+        }
+
+      Text(model.statsText)
+        .font(.caption.monospacedDigit())
+        .foregroundStyle(.secondary)
+
+      Spacer()
+
+      Button {
+        model.disconnect()
+      } label: {
+        Label("断开", systemImage: "power")
+      }
+      .tint(Brand.danger)
+    }
+    .buttonStyle(.bordered)
+    .controlSize(.large)
+    .padding(.horizontal, 14)
+    .padding(.vertical, 8)
+    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+    .padding(.horizontal, 18)
   }
 
   private var sidebar: some View {
@@ -321,7 +392,9 @@ struct ContentView: View {
       }
 
       HStack(spacing: 0) {
-        actionItem("文件传输", icon: "doc.on.doc", enabled: false)
+        actionItem("文件传输", icon: "doc.on.doc", enabled: true) {
+          model.pickAndSendFile()
+        }
         divider
         actionItem("观看模式", icon: "play.rectangle", enabled: true) {
           model.connect(to: device.room, viewOnly: true)
@@ -523,6 +596,20 @@ struct ContentView: View {
         .foregroundStyle(.secondary)
 
       Button {
+        model.toggleImmersive()
+      } label: {
+        Label("全屏", systemImage: "arrow.up.left.and.arrow.down.right")
+      }
+      .keyboardShortcut("f")
+      .help("全屏显示 (⌘F / ESC 退出)")
+
+      Button {
+        model.pickAndSendFile()
+      } label: {
+        Label("发送文件", systemImage: "paperplane")
+      }
+
+      Button {
         showDrawer.toggle()
       } label: {
         Image(systemName: "sidebar.right")
@@ -543,9 +630,43 @@ struct ContentView: View {
 
   private var drawer: some View {
     VStack(spacing: 8) {
+      if !model.transfers.isEmpty {
+        transfersPanel
+      }
       chatPanel
       logPanel
     }
+  }
+
+  private var transfersPanel: some View {
+    VStack(spacing: 6) {
+      HStack {
+        Label("文件传输", systemImage: "arrow.up.arrow.down.circle")
+          .font(.callout.weight(.semibold))
+        Spacer()
+      }
+      ForEach(model.transfers) { item in
+        VStack(alignment: .leading, spacing: 3) {
+          HStack(spacing: 6) {
+            Image(systemName: item.outgoing ? "arrow.up.circle" : "arrow.down.circle")
+              .foregroundStyle(item.outgoing ? Brand.accent : Brand.online)
+            Text(item.name)
+              .font(.callout)
+              .lineLimit(1)
+            Spacer()
+            Text(item.state)
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          }
+          ProgressView(
+            value: item.total > 0 ? Double(item.transferred) / Double(item.total) : 0
+          )
+          .controlSize(.small)
+        }
+      }
+    }
+    .padding(10)
+    .background(.white, in: RoundedRectangle(cornerRadius: 12))
   }
 
   private var chatPanel: some View {

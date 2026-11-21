@@ -8,6 +8,7 @@ public struct SessionConfig {
   public var token: String
   public var stun: String
   public var greeting: String?
+  public var downloadDir: String
 
   public init(
     server: String = "ws://127.0.0.1:8080",
@@ -15,7 +16,8 @@ public struct SessionConfig {
     peer: String,
     token: String = "",
     stun: String = "",
-    greeting: String? = nil
+    greeting: String? = nil,
+    downloadDir: String = "."
   ) {
     self.server = server
     self.room = room
@@ -23,6 +25,7 @@ public struct SessionConfig {
     self.token = token
     self.stun = stun
     self.greeting = greeting
+    self.downloadDir = downloadDir
   }
 }
 
@@ -70,6 +73,33 @@ public struct MediaFrame: Equatable {
   }
 }
 
+public struct FileTransferEvent: Equatable {
+  public enum Kind: Equatable {
+    case offer
+    case progress
+    case sent
+    case acknowledged
+    case saved
+    case error(String)
+  }
+
+  public let transferId: UInt32
+  public let name: String
+  public let bytes: UInt64
+  public let path: String
+  public let kind: Kind
+
+  public init(
+    transferId: UInt32, name: String, bytes: UInt64, path: String, kind: Kind
+  ) {
+    self.transferId = transferId
+    self.name = name
+    self.bytes = bytes
+    self.path = path
+    self.kind = kind
+  }
+}
+
 /// Thin wrapper around `hcr_session`. The offerer/answerer orchestration
 /// lives in the native layer; this class only pumps events and marshals
 /// sends through a command queue onto the session thread (the native
@@ -80,6 +110,7 @@ public final class SessionController {
   public var onChat: ((ChatMessage) -> Void)?
   public var onChannels: (([String: Bool]) -> Void)?
   public var onFrame: ((MediaFrame) -> Void)?
+  public var onFile: ((FileTransferEvent) -> Void)?
 
   private enum NativeEvent: Int {
     case none = 0
@@ -100,12 +131,17 @@ public final class SessionController {
     case error = 15
     case queueOverflow = 16
     case frameMessage = 17
+    case fileOffer = 18
+    case fileProgress = 19
+    case fileComplete = 20
+    case fileError = 21
   }
 
   private enum Command {
     case sendText(channel: String, text: String)
     case sendBinary(channel: String, data: Data)
     case sendFrame(frameId: UInt32, keyframe: Bool, timestampMs: UInt32, data: Data)
+    case sendFile(path: String)
     case stop
   }
 
@@ -170,6 +206,12 @@ public final class SessionController {
     lock.unlock()
   }
 
+  public func sendFile(path: String) {
+    lock.lock()
+    commands.append(.sendFile(path: path))
+    lock.unlock()
+  }
+
   private func emitStatus(_ status: SessionStatus) {
     callbackQueue.async { [weak self] in self?.onStatus?(status) }
   }
@@ -188,6 +230,10 @@ public final class SessionController {
 
   private func emitFrame(_ frame: MediaFrame) {
     callbackQueue.async { [weak self] in self?.onFrame?(frame) }
+  }
+
+  private func emitFile(_ event: FileTransferEvent) {
+    callbackQueue.async { [weak self] in self?.onFile?(event) }
   }
 
   private func stopRequested() -> Bool {
@@ -244,6 +290,15 @@ public final class SessionController {
         if !ok {
           emitLog("发送帧失败 #\(frameId): \(String(cString: hcr_last_error()))")
         }
+      case .sendFile(let path):
+        let ok = path.withCString { cPath in
+          hcr_session_send_file(session, cPath, nil)
+        }
+        if ok {
+          emitLog("开始发送文件: \(path)")
+        } else {
+          emitLog("发送文件失败: \(String(cString: hcr_last_error()))")
+        }
       }
     }
   }
@@ -272,6 +327,9 @@ public final class SessionController {
       return
     }
     defer { hcr_session_destroy(handle) }
+    config.downloadDir.withCString { cDir in
+      hcr_session_set_download_dir(handle, cDir)
+    }
 
     emitStatus(.connecting)
     hcr_session_connect(handle)
@@ -375,6 +433,35 @@ public final class SessionController {
         MediaFrame(
           frameId: event.frame_id, timestampMs: event.timestamp_ms,
           keyframe: event.keyframe, data: data))
+    case .fileOffer:
+      emitLog(
+        "收到文件: \(String(cString: event.text)) (\(event.file_size) 字节)")
+      emitFile(
+        FileTransferEvent(
+          transferId: event.frame_id, name: String(cString: event.text),
+          bytes: event.file_size, path: "", kind: .offer))
+    case .fileProgress:
+      emitFile(
+        FileTransferEvent(
+          transferId: event.frame_id, name: String(cString: event.text),
+          bytes: event.file_size, path: "", kind: .progress))
+    case .fileComplete:
+      let channel = String(cString: event.channel)
+      let kind: FileTransferEvent.Kind =
+        channel == "sent" ? .sent : (channel == "acked" ? .acknowledged : .saved)
+      emitLog("文件完成: \(String(cString: event.text)) (\(event.file_size) 字节)")
+      emitFile(
+        FileTransferEvent(
+          transferId: event.frame_id, name: String(cString: event.text),
+          bytes: event.file_size, path: String(cString: event.channel),
+          kind: kind))
+    case .fileError:
+      let code = String(cString: event.code)
+      emitLog("文件传输错误: \(code) \(String(cString: event.text))")
+      emitFile(
+        FileTransferEvent(
+          transferId: event.frame_id, name: String(cString: event.text),
+          bytes: 0, path: "", kind: .error(code)))
     default:
       break
     }

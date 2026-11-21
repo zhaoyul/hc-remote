@@ -1,8 +1,19 @@
+import AppKit
 import Combine
 import Foundation
 import HcrCore
 import HcrMedia
 import SwiftUI
+
+struct TransferItem: Identifiable {
+  let id = UUID()
+  let transferId: UInt32
+  let name: String
+  var total: UInt64
+  var transferred: UInt64 = 0
+  let outgoing: Bool
+  var state: String
+}
 
 @MainActor
 final class AppModel: ObservableObject {
@@ -60,6 +71,11 @@ final class AppModel: ObservableObject {
   @Published var logs: [String] = []
   @Published var draft = ""
   @Published var sendChannel = "control"
+  @Published var transfers: [TransferItem] = []
+  @Published var immersive = false
+  @Published var downloadDir: String = FileManager.default
+    .urls(for: .downloadsDirectory, in: .userDomainMask)[0]
+    .appendingPathComponent("hc-remote").path
 
   let controller = SessionController(callbackQueue: .main)
   let stream: StreamController
@@ -68,6 +84,7 @@ final class AppModel: ObservableObject {
   private var autoconnect = false
   private var autostream = false
   private var devicemodeArg = false
+  private var fullscreenArg = false
   private var deviceHost = false
   private var activeRoom: String = ""
 
@@ -91,6 +108,9 @@ final class AppModel: ObservableObject {
     }
     controller.onFrame = { [weak self] frame in
       self?.stream.handleFrame(frame)
+    }
+    controller.onFile = { [weak self] event in
+      self?.handleTransfer(event)
     }
 
     stream.onLog = { [weak self] text in
@@ -178,7 +198,8 @@ final class AppModel: ObservableObject {
       room: trimmedRoom,
       peer: peerName.trimmingCharacters(in: .whitespaces),
       token: token.trimmingCharacters(in: .whitespaces),
-      stun: stun.trimmingCharacters(in: .whitespaces)
+      stun: stun.trimmingCharacters(in: .whitespaces),
+      downloadDir: downloadDir
     )
     isActive = true
     statusText = "连接中…"
@@ -230,6 +251,72 @@ final class AppModel: ObservableObject {
     stream.sendInput(message)
   }
 
+  func sendFile(url: URL) {
+    let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
+    let size = (attributes?[.size] as? UInt64) ?? 0
+    transfers.append(
+      TransferItem(
+        transferId: 0, name: url.lastPathComponent, total: size,
+        outgoing: true, state: "发送中"))
+    controller.sendFile(path: url.path)
+  }
+
+  func pickAndSendFile() {
+    let panel = NSOpenPanel()
+    panel.allowsMultipleSelection = false
+    panel.canChooseDirectories = false
+    if panel.runModal() == .OK, let url = panel.url {
+      sendFile(url: url)
+    }
+  }
+
+  func toggleImmersive() {
+    immersive.toggle()
+    if let window = NSApp.windows.first(where: { $0.title == "hc-remote" }) {
+      window.toggleFullScreen(nil)
+    }
+  }
+
+  private func handleTransfer(_ event: FileTransferEvent) {
+    switch event.kind {
+    case .offer:
+      transfers.append(
+        TransferItem(
+          transferId: event.transferId, name: event.name, total: event.bytes,
+          outgoing: false, state: "接收中"))
+    case .progress:
+      if let index = transfers.firstIndex(where: { $0.transferId == event.transferId }) {
+        transfers[index].transferred = event.bytes
+      }
+    case .sent:
+      if let index = transfers.firstIndex(where: {
+        $0.outgoing && $0.state == "发送中"
+      }) {
+        transfers[index].transferred = transfers[index].total
+        transfers[index].state = "等待确认"
+      }
+    case .acknowledged:
+      if let index = transfers.firstIndex(where: {
+        $0.outgoing && $0.state == "等待确认"
+      }) {
+        transfers[index].state = "发送完成"
+      }
+    case .saved:
+      if let index = transfers.firstIndex(where: {
+        !$0.outgoing && $0.transferId == event.transferId
+      }) {
+        transfers[index].transferred = event.bytes
+        transfers[index].state = "已保存"
+      }
+    case .error(let code):
+      if let index = transfers.firstIndex(where: { $0.transferId == event.transferId }) {
+        transfers[index].state = "失败: \(code)"
+      } else if let index = transfers.lastIndex(where: { $0.state == "发送中" }) {
+        transfers[index].state = "失败: \(code)"
+      }
+    }
+  }
+
   func send() {
     let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !text.isEmpty else { return }
@@ -244,6 +331,16 @@ final class AppModel: ObservableObject {
 
   func startIfConfigured() {
     print("startIfConfigured devicemodeArg=\(devicemodeArg) autoconnect=\(autoconnect)")
+    if fullscreenArg {
+      fullscreenArg = false
+      immersive = true
+      DispatchQueue.main.async { [weak self] in
+        guard let self else { return }
+        if let window = NSApp.windows.first(where: { $0.title == "hc-remote" }) {
+          window.toggleFullScreen(nil)
+        }
+      }
+    }
     if devicemodeArg {
       devicemodeArg = false
       if !room.isEmpty {
@@ -366,6 +463,8 @@ final class AppModel: ObservableObject {
         autostream = true
       case "--devicemode":
         devicemodeArg = true
+      case "--fullscreen":
+        fullscreenArg = true
       default:
         break
       }
